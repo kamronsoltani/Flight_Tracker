@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FlightTracker control</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; }
+    code { background: #f0f0f0; padding: 0.1em 0.35em; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>FlightTracker phone control</h1>
+  <p>
+    Bluetooth was dropped — classic ESP32 IRAM is full with the LED matrix driver.
+    Control runs over Wi‑Fi instead.
+  </p>
+  <ol>
+    <li>Join the <strong>same network</strong> as the panel (Berkeley-IoT or your hotspot).</li>
+    <li>Open Serial once after boot and note the line <code>Control UI: http://…</code></li>
+    <li>On your phone open that URL (try <code>http://flighttracker.local/</code> first).</li>
+  </ol>
+  <p>From there: On / Off, brightness slider, night schedule.</p>
+</body>
+</html>
