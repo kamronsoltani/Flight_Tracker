@@ -15,6 +15,7 @@
     --accent: #e07a2f;
     --ok: #3ecf8e;
     --warn: #d4a017;
+    --err: #e85d5d;
   }
   * { box-sizing: border-box; }
   body {
@@ -40,10 +41,37 @@
   .status {
     color: var(--muted);
     font-size: 0.85rem;
-    margin-bottom: 1.4rem;
+    margin-bottom: 0.75rem;
   }
   .status.on { color: var(--ok); }
   .status.warn { color: var(--warn); }
+  .flash {
+    min-height: 2.6rem;
+    margin-bottom: 1rem;
+    padding: 0.7rem 0.85rem;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #1a1f27;
+    color: var(--muted);
+    font-size: 0.84rem;
+    line-height: 1.35;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+  .flash.sent {
+    color: var(--fg);
+    border-color: #3d4a5c;
+    background: #222833;
+  }
+  .flash.ok {
+    color: #d8ffe9;
+    border-color: #2f6b4f;
+    background: #173528;
+  }
+  .flash.err {
+    color: #ffd6d6;
+    border-color: #7a3434;
+    background: #3a1c1c;
+  }
   section {
     border-top: 1px solid var(--line);
     padding: 1.15rem 0;
@@ -104,6 +132,11 @@
     border-color: transparent;
     color: #141414;
   }
+  button.ok {
+    background: var(--ok);
+    border-color: transparent;
+    color: #102418;
+  }
   button:disabled { opacity: 0.45; cursor: default; }
   .toggle {
     position: relative;
@@ -138,6 +171,7 @@
 <main>
   <h1>FLIGHT TRACKER</h1>
   <div class="status warn" id="link">Connecting…</div>
+  <div class="flash" id="flash">Changes will confirm here when the panel receives them.</div>
 
   <section>
     <div class="row">
@@ -196,6 +230,10 @@ const CFG = window.FT_CONFIG || {};
 const $ = (s) => document.querySelector(s);
 let client = null;
 let briTimer = null;
+let flashTimer = null;
+let pending = null; // { kind, expect, label, at }
+let panelOnline = false;
+let ignoreStatusUntil = 0;
 
 function topic(suffix) {
   return `ft/${CFG.deviceId}/${suffix}`;
@@ -207,12 +245,79 @@ function setLink(text, cls) {
   el.className = 'status ' + (cls || '');
 }
 
-function sendCmd(obj) {
-  if (!client || !client.connected) return;
-  client.publish(topic('cmd'), JSON.stringify(obj), { qos: 1 });
+function setFlash(text, cls) {
+  const el = $('#flash');
+  el.textContent = text;
+  el.className = 'flash' + (cls ? ' ' + cls : '');
+  clearTimeout(flashTimer);
+  if (cls === 'ok' || cls === 'err') {
+    flashTimer = setTimeout(() => {
+      if (!pending) {
+        setFlash(panelOnline
+          ? 'Ready — panel will confirm your next change.'
+          : 'Waiting for the panel to come online…');
+      }
+    }, 3500);
+  }
 }
 
-function applyStatus(j) {
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function describeStatus(j) {
+  const bri = j.brightness != null ? j.brightness : '—';
+  const power = j.on ? 'ON' : 'OFF';
+  if (j.schedEnabled) {
+    return `Panel ${power} · brightness ${bri} · schedule ${pad2(j.onHour)}:${pad2(j.onMin)}–${pad2(j.offHour)}:${pad2(j.offMin)}`;
+  }
+  return `Panel ${power} · brightness ${bri} · schedule off`;
+}
+
+function matchesPending(j) {
+  if (!pending || !pending.expect) return false;
+  const e = pending.expect;
+  for (const k of Object.keys(e)) {
+    if (j[k] == null) return false;
+    if (typeof e[k] === 'boolean') {
+      if (!!j[k] !== e[k]) return false;
+    } else if (+j[k] !== +e[k]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function sendCmd(obj, meta) {
+  if (!client || !client.connected) {
+    setFlash('Not connected to MQTT — can’t send yet.', 'err');
+    return false;
+  }
+  if (!panelOnline) {
+    setFlash('Panel looks offline — command sent anyway, waiting for confirm…', 'sent');
+  } else {
+    setFlash('Sending: ' + (meta && meta.label ? meta.label : 'update…'), 'sent');
+  }
+
+  pending = {
+    kind: meta && meta.kind,
+    expect: meta && meta.expect,
+    label: meta && meta.label,
+    at: Date.now()
+  };
+  ignoreStatusUntil = Date.now() + 150; // skip stale retained status race
+  client.publish(topic('cmd'), JSON.stringify(obj), { qos: 1 });
+
+  // If panel never confirms, say so
+  clearTimeout(sendCmd._t);
+  sendCmd._t = setTimeout(() => {
+    if (pending && Date.now() - pending.at >= 4000) {
+      setFlash('No confirmation from panel yet — is it online / MQTT OK?', 'err');
+      pending = null;
+    }
+  }, 4200);
+  return true;
+}
+
+function applyStatus(j, fromLive) {
   if (j.on != null) $('#power').checked = !!j.on;
   if (j.brightness != null) {
     $('#bri').value = j.brightness;
@@ -220,28 +325,62 @@ function applyStatus(j) {
   }
   if (j.schedEnabled != null) $('#sched').checked = !!j.schedEnabled;
   if (j.onHour != null && j.onMin != null) {
-    $('#onTime').value =
-      String(j.onHour).padStart(2, '0') + ':' + String(j.onMin).padStart(2, '0');
+    $('#onTime').value = pad2(j.onHour) + ':' + pad2(j.onMin);
   }
   if (j.offHour != null && j.offMin != null) {
-    $('#offTime').value =
-      String(j.offHour).padStart(2, '0') + ':' + String(j.offMin).padStart(2, '0');
+    $('#offTime').value = pad2(j.offHour) + ':' + pad2(j.offMin);
+  }
+
+  if (!fromLive) return;
+  if (Date.now() < ignoreStatusUntil) return;
+
+  if (pending && matchesPending(j)) {
+    const label = pending.label || 'Update';
+    pending = null;
+    setFlash('Confirmed: ' + label, 'ok');
+    const btn = $('#saveSched');
+    if (label.toLowerCase().includes('schedule')) {
+      const prev = btn.textContent;
+      btn.textContent = 'Saved';
+      btn.classList.add('ok');
+      btn.classList.remove('primary');
+      setTimeout(() => {
+        btn.textContent = prev;
+        btn.classList.remove('ok');
+        btn.classList.add('primary');
+      }, 1600);
+    }
+  } else if (!pending) {
+    setFlash(describeStatus(j));
   }
 }
 
 function saveSchedule() {
   const [oh, om] = $('#onTime').value.split(':').map(Number);
   const [fh, fm] = $('#offTime').value.split(':').map(Number);
+  const enabled = $('#sched').checked;
+  const label = enabled
+    ? `schedule ${pad2(oh)}:${pad2(om)}–${pad2(fh)}:${pad2(fm)}`
+    : 'schedule disabled';
   sendCmd({
-    schedEnabled: $('#sched').checked,
+    schedEnabled: enabled,
     onHour: oh, onMin: om,
     offHour: fh, offMin: fm
+  }, {
+    kind: 'schedule',
+    label,
+    expect: {
+      schedEnabled: enabled,
+      onHour: oh, onMin: om,
+      offHour: fh, offMin: fm
+    }
   });
 }
 
 function connectMqtt() {
   if (!CFG.brokerUrl || String(CFG.brokerUrl).includes('YOUR_CLUSTER')) {
     setLink('Edit config.js with HiveMQ settings', 'warn');
+    setFlash('Missing HiveMQ config.', 'err');
     return;
   }
   client = mqtt.connect(CFG.brokerUrl, {
@@ -253,19 +392,26 @@ function connectMqtt() {
   });
   client.on('connect', () => {
     setLink('Connected — waiting for panel…', 'warn');
+    setFlash('MQTT connected. Waiting for the panel…');
     client.subscribe(topic('status'));
     client.subscribe(topic('online'));
   });
   client.on('reconnect', () => setLink('Reconnecting…', 'warn'));
-  client.on('close', () => setLink('Disconnected', 'warn'));
+  client.on('close', () => {
+    panelOnline = false;
+    setLink('Disconnected', 'warn');
+    setFlash('Disconnected from MQTT.', 'err');
+  });
   client.on('message', (t, buf) => {
     const msg = buf.toString();
     if (t.endsWith('/online')) {
-      setLink(msg === '1' ? 'Panel online' : 'Panel offline', msg === '1' ? 'on' : 'warn');
+      panelOnline = msg === '1';
+      setLink(panelOnline ? 'Panel online' : 'Panel offline', panelOnline ? 'on' : 'warn');
+      if (!panelOnline) setFlash('Panel offline — commands won’t apply until it reconnects.', 'err');
       return;
     }
     if (t.endsWith('/status')) {
-      try { applyStatus(JSON.parse(msg)); } catch (e) {}
+      try { applyStatus(JSON.parse(msg), true); } catch (e) {}
     }
   });
 }
@@ -273,22 +419,47 @@ function connectMqtt() {
 $('#bri').addEventListener('input', (e) => {
   $('#briVal').textContent = e.target.value;
   clearTimeout(briTimer);
-  briTimer = setTimeout(() => sendCmd({ brightness: +e.target.value }), 200);
+  briTimer = setTimeout(() => {
+    const v = +e.target.value;
+    sendCmd({ brightness: v }, {
+      kind: 'brightness',
+      label: 'brightness ' + v,
+      expect: { brightness: v }
+    });
+  }, 200);
 });
 $('#bri').addEventListener('change', (e) => {
   clearTimeout(briTimer);
-  sendCmd({ brightness: +e.target.value });
+  const v = +e.target.value;
+  sendCmd({ brightness: v }, {
+    kind: 'brightness',
+    label: 'brightness ' + v,
+    expect: { brightness: v }
+  });
 });
 $('#power').addEventListener('change', (e) => {
-  sendCmd({ on: e.target.checked, schedEnabled: false });
+  const on = e.target.checked;
+  sendCmd({ on, schedEnabled: false }, {
+    kind: 'power',
+    label: on ? 'panel ON' : 'panel OFF',
+    expect: { on, schedEnabled: false }
+  });
 });
 $('#btnOn').onclick = () => {
   $('#power').checked = true;
-  sendCmd({ on: true, schedEnabled: false });
+  sendCmd({ on: true, schedEnabled: false }, {
+    kind: 'power',
+    label: 'panel ON',
+    expect: { on: true, schedEnabled: false }
+  });
 };
 $('#btnOff').onclick = () => {
   $('#power').checked = false;
-  sendCmd({ on: false, schedEnabled: false });
+  sendCmd({ on: false, schedEnabled: false }, {
+    kind: 'power',
+    label: 'panel OFF',
+    expect: { on: false, schedEnabled: false }
+  });
 };
 $('#saveSched').onclick = saveSchedule;
 $('#sched').onchange = saveSchedule;
