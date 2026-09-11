@@ -3,641 +3,297 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<meta name="apple-mobile-web-app-capable" content="yes"/>
 <title>Flight Tracker</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-<script src="./config.js"></script>
+<script src="config.js"></script>
 <style>
-:root, [data-theme="radar"]{
-  --bg:#0c1210; --panel:#141c18; --line:#24322b; --text:#e8f0ea; --muted:#8aa193;
-  --accent:#d4a017; --accent2:#3ecf8e; --danger:#e85d4c; --watch:#ff7a45; --glow:rgba(212,160,23,.25);
-  --map-h: min(62vh, 560px);
-}
-[data-theme="slate"]{
-  --bg:#0f1419; --panel:#171e26; --line:#2a3542; --text:#e8eef4; --muted:#8b9aab;
-  --accent:#5b9fd4; --accent2:#5dcaa5; --danger:#e85d4c; --watch:#f0a202; --glow:rgba(91,159,212,.25);
-}
-[data-theme="day"]{
-  --bg:#e8eee6; --panel:#f7faf5; --line:#c9d6c4; --text:#1a241c; --muted:#5c6b60;
-  --accent:#b07d12; --accent2:#1f8a5b; --danger:#c43c2e; --watch:#c45c1a; --glow:rgba(176,125,18,.2);
-}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);
-  font-family:"Segoe UI",ui-rounded,system-ui,-apple-system,sans-serif}
-body{
-  background:
-    radial-gradient(1000px 480px at 8% -8%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 55%),
-    radial-gradient(800px 400px at 100% 0%, color-mix(in srgb, var(--accent2) 12%, transparent), transparent 50%),
-    var(--bg);
-  padding:20px clamp(16px,3vw,32px) 48px;
-}
-.shell{max-width:1400px;margin:0 auto}
-header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:18px}
-.brand{font-size:clamp(1.4rem,2.2vw,1.9rem);font-weight:750;letter-spacing:-.03em}
-.brand span{color:var(--accent)}
-.sub{color:var(--muted);font-size:.8rem;margin-top:4px}
-.header-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.pill{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 12px;font-size:.75rem;color:var(--muted);white-space:nowrap}
-.pill.on{color:var(--accent2);border-color:color-mix(in srgb, var(--accent2) 40%, var(--line))}
-.pill.warn{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 40%, var(--line))}
-.iconbtn{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--text);
-  border-radius:12px;padding:8px 12px;font-weight:600;font-size:.8rem;cursor:pointer}
-.layout{
-  display:grid;gap:14px;
-  grid-template-columns:1fr;
-}
-@media(min-width:980px){
-  .layout{grid-template-columns:minmax(0,1.45fr) minmax(320px,.85fr)}
-  .layout.wide-map{grid-template-columns:minmax(0,1.8fr) minmax(300px,.7fr)}
-  .layout.controls-left{grid-template-columns:minmax(320px,.85fr) minmax(0,1.45fr)}
-  .layout.controls-left .col-main{order:2}
-  .layout.controls-left .col-side{order:1}
-}
-.card{background:linear-gradient(180deg,color-mix(in srgb,var(--panel) 92%,#fff),var(--panel));
-  border:1px solid var(--line);border-radius:18px;padding:14px 14px 16px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
-.card h2{margin:0 0 12px;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:650;display:flex;justify-content:space-between;align-items:center;gap:8px}
-.card.hidden{display:none}
-#mapWrap{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:color-mix(in srgb,var(--bg) 80%,#000)}
-#map{display:block;width:100%;height:var(--map-h);z-index:0}
-.plane-icon{background:transparent;border:0}
-.leaflet-container{background:#0d1511;font:inherit}
-.mapHud{position:absolute;left:10px;top:10px;right:10px;display:flex;justify-content:space-between;gap:8px;pointer-events:none;flex-wrap:wrap}
-.mapHud b{display:inline-block;background:color-mix(in srgb,var(--bg) 78%,transparent);border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:.72rem;backdrop-filter:blur(6px)}
-.side{display:grid;gap:14px;align-content:start}
-.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.lbl{font-size:.9rem;font-weight:600}
-.hint{font-size:.72rem;color:var(--muted);margin-top:3px}
-input[type=range]{width:100%;accent-color:var(--accent)}
-input[type=text],input[type=time],select{
-  width:100%;background:color-mix(in srgb,var(--bg) 70%,#000);border:1px solid var(--line);
-  border-radius:10px;color:var(--text);padding:10px 12px;font-size:.95rem
-}
-.toggle{position:relative;width:52px;height:30px;flex:none}
-.toggle input{opacity:0;width:0;height:0}
-.toggle span{position:absolute;inset:0;background:color-mix(in srgb,var(--line) 80%,#000);border-radius:999px;transition:.2s;border:1px solid var(--line)}
-.toggle span:before{content:"";position:absolute;width:22px;height:22px;left:3px;top:3px;border-radius:50%;background:#cfd8d2;transition:.2s}
-.toggle input:checked+span{background:color-mix(in srgb,var(--accent2) 45%,#234);border-color:color-mix(in srgb,var(--accent2) 50%,var(--line))}
-.toggle input:checked+span:before{transform:translateX(22px);background:#fff}
-.btnrow{display:flex;gap:8px;flex-wrap:wrap}
-button,.chip{
-  appearance:none;border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 80%,#000);
-  color:var(--text);border-radius:12px;padding:10px 12px;font-weight:650;font-size:.88rem;cursor:pointer
-}
-button.primary{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 85%,#fff),var(--accent));border-color:var(--accent);color:#1a1405;box-shadow:0 0 0 1px var(--glow)}
-button.danger{background:color-mix(in srgb,var(--danger) 22%,var(--panel));border-color:color-mix(in srgb,var(--danger) 45%,var(--line));color:var(--danger)}
-button.ghost{background:transparent}
-.timegrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.timegrid label{display:block;font-size:.7rem;color:var(--muted);margin-bottom:4px}
-.checks{display:grid;gap:8px}
-.check{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--bg) 65%,transparent);border:1px solid var(--line)}
-.list{display:grid;gap:8px;max-height:min(48vh,420px);overflow:auto}
-.flight{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px;border-radius:12px;background:color-mix(in srgb,var(--bg) 65%,transparent);border:1px solid var(--line);cursor:pointer}
-.flight:hover{border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}
-.flight.watched{border-color:color-mix(in srgb,var(--watch) 55%,var(--line));box-shadow:inset 3px 0 0 var(--watch)}
-.flight .cs{font-weight:750;letter-spacing:.02em}
-.flight .meta{font-size:.72rem;color:var(--muted)}
-.flight .alt{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:650;font-size:.85rem}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--accent2);box-shadow:0 0 10px color-mix(in srgb,var(--accent2) 50%,transparent)}
-.flight.watched .dot{background:var(--watch)}
-.watchrow{display:flex;gap:8px;margin-bottom:10px}
-.tags{display:flex;flex-wrap:wrap;gap:6px;min-height:28px}
-.tag{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--watch) 45%,var(--line));background:color-mix(in srgb,var(--watch) 14%,transparent);font-size:.78rem;font-weight:650}
-.tag button{border:0;background:transparent;color:var(--muted);padding:0;font-size:1rem;line-height:1}
-.drawer-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:40}
-.drawer-backdrop.open{display:block}
-.drawer{position:fixed;top:0;right:0;height:100%;width:min(400px,92vw);background:var(--panel);border-left:1px solid var(--line);
-  transform:translateX(100%);transition:transform .2s ease;z-index:50;padding:18px;overflow:auto}
-.drawer.open{transform:translateX(0)}
-.footer{margin-top:18px;color:var(--muted);font-size:.72rem;text-align:center;line-height:1.5}
-#otaLog{margin-top:8px;font-size:.72rem;color:var(--muted);min-height:1.2em;white-space:pre-wrap}
-.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
-.tabs button{flex:0;padding:7px 10px;border-radius:999px;font-size:.75rem}
-.tabs button.active{background:color-mix(in srgb,var(--accent) 25%,var(--panel));border-color:var(--accent);color:var(--text)}
+  :root {
+    --bg: #12151a;
+    --fg: #eef2f6;
+    --muted: #8b95a3;
+    --line: #2a313c;
+    --accent: #e07a2f;
+    --ok: #3ecf8e;
+    --warn: #d4a017;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+    background:
+      radial-gradient(800px 420px at 100% -10%, #243041 0%, transparent 55%),
+      var(--bg);
+    color: var(--fg);
+    padding: 1.5rem;
+  }
+  main {
+    max-width: 420px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.15rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    margin: 0 0 0.35rem;
+  }
+  .status {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 1.4rem;
+  }
+  .status.on { color: var(--ok); }
+  .status.warn { color: var(--warn); }
+  section {
+    border-top: 1px solid var(--line);
+    padding: 1.15rem 0;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .lbl { font-size: 0.95rem; font-weight: 560; }
+  .hint { color: var(--muted); font-size: 0.78rem; margin-top: 0.2rem; }
+  .val { color: var(--muted); font-variant-numeric: tabular-nums; }
+  input[type=range] {
+    width: 100%;
+    margin-top: 0.85rem;
+    accent-color: var(--accent);
+  }
+  input[type=time] {
+    width: 100%;
+    background: #1a1f27;
+    border: 1px solid var(--line);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 0.65rem 0.7rem;
+    font: inherit;
+  }
+  .times {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+  }
+  .times label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+  .btnrow {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 0.9rem;
+  }
+  button {
+    flex: 1;
+    font: inherit;
+    font-weight: 600;
+    border: 1px solid var(--line);
+    background: #1a1f27;
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 0.75rem;
+    cursor: pointer;
+  }
+  button.primary {
+    background: var(--accent);
+    border-color: transparent;
+    color: #141414;
+  }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .toggle {
+    position: relative;
+    width: 48px;
+    height: 28px;
+    flex-shrink: 0;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle span {
+    position: absolute;
+    inset: 0;
+    background: #2a313c;
+    border-radius: 999px;
+    transition: 0.15s;
+  }
+  .toggle span::before {
+    content: "";
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    left: 3px;
+    top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: 0.15s;
+  }
+  .toggle input:checked + span { background: var(--accent); }
+  .toggle input:checked + span::before { transform: translateX(20px); }
 </style>
 </head>
 <body>
-<div class="shell">
-<header>
-  <div>
-    <div class="brand">Flight <span>Tracker</span></div>
-    <div class="sub" id="netline">Cloud dashboard · phone &amp; computer</div>
-  </div>
-  <div class="header-actions">
-    <div class="pill warn" id="linkpill">MQTT…</div>
-    <div class="pill" id="powerpill">PANEL —</div>
-    <button class="iconbtn" id="btnCustomize" type="button">Customize</button>
-  </div>
-</header>
+<main>
+  <h1>FLIGHT TRACKER</h1>
+  <div class="status warn" id="link">Connecting…</div>
 
-<div class="layout" id="layout">
-  <div class="col-main">
-    <section class="card" id="cardMap">
-      <h2><span>Live map</span><span id="mapMeta" class="hint" style="letter-spacing:0;text-transform:none"></span></h2>
-      <div id="mapWrap">
-        <div id="map"></div>
-        <div class="mapHud"><b id="mapCount">0 aircraft</b><b id="mapRange">— nm</b></div>
+  <section>
+    <div class="row">
+      <div>
+        <div class="lbl">Panel power</div>
+        <div class="hint">Turn the matrix on or off</div>
       </div>
-    </section>
-    <section class="card" id="cardList" style="margin-top:14px">
-      <h2>
-        <span>Flights</span>
-        <span class="tabs" id="listTabs">
-          <button type="button" class="active" data-mode="all">All</button>
-          <button type="button" data-mode="watched">Watched</button>
-        </span>
-      </h2>
-      <div class="list" id="flightList"></div>
-    </section>
-  </div>
-
-  <div class="col-side side">
-    <section class="card" id="cardLoc">
-      <h2>Your location</h2>
-      <div class="hint">Click the map (or drag the gold marker) to set where the panel searches. Radius is nautical miles.</div>
-      <div style="margin-top:10px">
-        <div class="row"><div class="lbl">Search radius</div><div id="radVal" class="hint">10 nm</div></div>
-        <input type="range" id="radius" min="5" max="150" value="10"/>
-      </div>
-      <div class="hint" id="locReadout" style="margin-top:8px">—</div>
-      <div class="btnrow" style="margin-top:12px">
-        <button class="primary" id="btnSaveLoc" type="button">Save &amp; scan here</button>
-        <button id="btnGeo" type="button">Use GPS</button>
-      </div>
-      <div class="check" style="margin-top:12px">
-        <div><div class="lbl">Follow watched</div><div class="hint">Map tracks pinned flights</div></div>
-        <label class="toggle"><input type="checkbox" id="followWatch"/><span></span></label>
-      </div>
-    </section>
-
-    <section class="card" id="cardWatch">
-      <h2>Track specific flights</h2>
-      <div class="watchrow">
-        <input type="text" id="watchInput" placeholder="e.g. UAL123 or DAL456" maxlength="15"/>
-        <button class="primary" id="btnWatchAdd" type="button">Add</button>
-      </div>
-      <div class="tags" id="watchTags"></div>
-      <div class="check" style="margin-top:12px">
-        <div><div class="lbl">Panel: watched only</div><div class="hint">LED shows only these callsigns</div></div>
-        <label class="toggle"><input type="checkbox" id="watchOnly"/><span></span></label>
-      </div>
-      <div class="hint" style="margin-top:8px">Looks up callsigns worldwide (not just nearby). Shows on the map + LED when the flight is airborne. Click a list row to pin.</div>
-    </section>
-
-    <section class="card" id="cardDisplay">
-      <h2>Display</h2>
-      <div class="row">
-        <div><div class="lbl">Panel power</div><div class="hint">Matrix on/off</div></div>
-        <label class="toggle"><input type="checkbox" id="power"/><span></span></label>
-      </div>
-      <div style="margin-top:14px">
-        <div class="row"><div class="lbl">Brightness</div><div id="briVal" class="hint">180</div></div>
-        <input type="range" id="bri" min="0" max="255" value="180"/>
-      </div>
-      <div class="btnrow" style="margin-top:14px">
-        <button class="primary" id="btnOn" type="button">On</button>
-        <button class="danger" id="btnOff" type="button">Off</button>
-      </div>
-    </section>
-
-    <section class="card" id="cardSched">
-      <h2>Schedule</h2>
-      <div class="row">
-        <div><div class="lbl">Auto on/off</div><div class="hint">Pacific time on device</div></div>
-        <label class="toggle"><input type="checkbox" id="sched"/><span></span></label>
-      </div>
-      <div class="timegrid" style="margin-top:12px">
-        <div><label>On</label><input type="time" id="onTime" value="07:00"/></div>
-        <div><label>Off</label><input type="time" id="offTime" value="23:00"/></div>
-      </div>
-      <button style="width:100%;margin-top:12px" id="saveSched" type="button">Save schedule</button>
-    </section>
-
-    <section class="card" id="cardFilters">
-      <h2>Filters</h2>
-      <div class="checks">
-        <div class="check">
-          <div><div class="lbl">International only</div><div class="hint">Hide domestic</div></div>
-          <label class="toggle"><input type="checkbox" id="fIntl"/><span></span></label>
-        </div>
-        <div class="check">
-          <div><div class="lbl">Hide cargo</div><div class="hint">FDX / UPS / DHL…</div></div>
-          <label class="toggle"><input type="checkbox" id="fCargo"/><span></span></label>
-        </div>
-      </div>
-    </section>
-
-    <section class="card" id="cardCloud">
-      <h2>Cloud firmware</h2>
-      <div class="hint" id="fwHint">Device firmware: —</div>
-      <div class="btnrow" style="margin-top:12px">
-        <button class="primary" id="btnOta" type="button">Check &amp; OTA</button>
-        <button id="btnFetch" type="button">Refresh flights</button>
-      </div>
-      <div id="otaLog"></div>
-    </section>
-  </div>
-</div>
-
-<div class="footer">Same URL on laptop or phone · stays on your normal Wi‑Fi · customize layout in the side panel</div>
-</div>
-
-<div class="drawer-backdrop" id="drawerBg"></div>
-<aside class="drawer" id="drawer" aria-label="Customize dashboard">
-  <h2 style="margin:0 0 14px;font-size:1.1rem">Customize</h2>
-  <div class="checks">
-    <div class="check"><div class="lbl">Theme</div>
-      <select id="prefTheme" style="width:auto;min-width:120px">
-        <option value="radar">Radar</option>
-        <option value="slate">Slate</option>
-        <option value="day">Day</option>
-      </select>
+      <label class="toggle">
+        <input type="checkbox" id="power" checked/>
+        <span></span>
+      </label>
     </div>
-    <div class="check"><div class="lbl">Layout</div>
-      <select id="prefLayout" style="width:auto;min-width:140px">
-        <option value="default">Map left</option>
-        <option value="controls-left">Controls left</option>
-        <option value="wide-map">Wide map</option>
-      </select>
+    <div class="btnrow">
+      <button class="primary" id="btnOn" type="button">On</button>
+      <button id="btnOff" type="button">Off</button>
     </div>
-    <div class="check"><div><div class="lbl">Map height</div></div>
-      <select id="prefMapH" style="width:auto;min-width:120px">
-        <option value="420">Compact</option>
-        <option value="560">Comfortable</option>
-        <option value="720">Tall</option>
-      </select>
+  </section>
+
+  <section>
+    <div class="row">
+      <div class="lbl">Brightness</div>
+      <div class="val" id="briVal">180</div>
     </div>
-  </div>
-  <h2 style="margin:18px 0 10px;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Widgets</h2>
-  <div class="checks" id="widgetToggles"></div>
-  <button class="ghost" style="width:100%;margin-top:16px" id="btnResetPrefs" type="button">Reset layout defaults</button>
-  <button class="primary" style="width:100%;margin-top:8px" id="btnCloseDrawer" type="button">Done</button>
-</aside>
+    <input type="range" id="bri" min="0" max="255" value="180"/>
+  </section>
+
+  <section>
+    <div class="row">
+      <div>
+        <div class="lbl">Schedule</div>
+        <div class="hint">Auto on/off · Pacific time</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="sched"/>
+        <span></span>
+      </label>
+    </div>
+    <div class="times">
+      <div>
+        <label for="onTime">On</label>
+        <input type="time" id="onTime" value="07:00"/>
+      </div>
+      <div>
+        <label for="offTime">Off</label>
+        <input type="time" id="offTime" value="23:00"/>
+      </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" id="saveSched" type="button">Save schedule</button>
+    </div>
+  </section>
+</main>
 
 <script>
 const CFG = window.FT_CONFIG || {};
-const LS_KEY = 'ft-dash-prefs-v1';
-const $=s=>document.querySelector(s);
-const $$=s=>[...document.querySelectorAll(s)];
+const $ = (s) => document.querySelector(s);
+let client = null;
+let briTimer = null;
 
-const WIDGETS = [
-  {id:'cardMap', label:'Live map'},
-  {id:'cardList', label:'Flight list'},
-  {id:'cardLoc', label:'Location'},
-  {id:'cardWatch', label:'Watchlist'},
-  {id:'cardDisplay', label:'Display controls'},
-  {id:'cardSched', label:'Schedule'},
-  {id:'cardFilters', label:'Filters'},
-  {id:'cardCloud', label:'Cloud / OTA'},
-];
-
-let prefs = loadPrefs();
-let client=null, flights=[], home={lat:37.64,lon:-122.37,radius:10};
-let watchlist=[], listMode='all', online=false, selected=null;
-
-function defaultPrefs(){
-  return {
-    theme:'radar', layout:'default', mapH:560,
-    widgets:Object.fromEntries(WIDGETS.map(w=>[w.id,true]))
-  };
-}
-function loadPrefs(){
-  try{ return Object.assign(defaultPrefs(), JSON.parse(localStorage.getItem(LS_KEY)||'{}')); }
-  catch(e){ return defaultPrefs(); }
-}
-function savePrefs(){ localStorage.setItem(LS_KEY, JSON.stringify(prefs)); applyPrefs(); }
-function applyPrefs(){
-  document.documentElement.setAttribute('data-theme', prefs.theme);
-  const lay = $('#layout');
-  lay.className = 'layout' + (prefs.layout!=='default' ? ' '+prefs.layout : '');
-  document.documentElement.style.setProperty('--map-h', Math.min(prefs.mapH, window.innerHeight*0.75)+'px');
-  WIDGETS.forEach(w=>{
-    const el = document.getElementById(w.id);
-    if(el) el.classList.toggle('hidden', prefs.widgets[w.id]===false);
-  });
-  $('#prefTheme').value = prefs.theme;
-  $('#prefLayout').value = prefs.layout;
-  $('#prefMapH').value = String(prefs.mapH);
-  drawMap();
-  if(map) setTimeout(()=>map.invalidateSize(), 100);
+function topic(suffix) {
+  return `ft/${CFG.deviceId}/${suffix}`;
 }
 
-function topic(suffix){ return `ft/${CFG.deviceId}/${suffix}`; }
-function sendCmd(obj){
-  if(!client||!client.connected) return;
-  client.publish(topic('cmd'), JSON.stringify(obj), {qos:1});
-}
-function syncWatch(){ sendCmd({watchlist, watchOnly: $('#watchOnly').checked}); }
-
-let map=null, homeMarker=null, rangeCircle=null, planeLayer=null, trailLayer=null;
-const trails = {}; // callsign -> [{lat,lon}, ...]
-let draftHome = null; // pending location before save
-
-function planeIcon(heading, watched){
-  const color = watched ? '#ff7a45' : '#3ecf8e';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
-    <g transform="translate(14,14) rotate(${heading||0})">
-      <path d="M0,-11 L5,9 L0,5 L-5,9 Z" fill="${color}" stroke="#111" stroke-width="1"/>
-    </g></svg>`;
-  return L.divIcon({className:'plane-icon', html:svg, iconSize:[28,28], iconAnchor:[14,14]});
+function setLink(text, cls) {
+  const el = $('#link');
+  el.textContent = text;
+  el.className = 'status ' + (cls || '');
 }
 
-function fmtMin(m){
-  if(m==null || m<0) return '—';
-  if(m<60) return m+'m';
-  return Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');
+function sendCmd(obj) {
+  if (!client || !client.connected) return;
+  client.publish(topic('cmd'), JSON.stringify(obj), { qos: 1 });
 }
 
-function updateLocReadout(){
-  const h = draftHome || home;
-  $('#locReadout').textContent = `${h.lat.toFixed(5)}, ${h.lon.toFixed(5)} · ${h.radius||home.radius} nm`;
-  $('#radVal').textContent = (h.radius||home.radius)+' nm';
-  $('#radius').value = h.radius||home.radius;
-}
-
-function ensureMap(){
-  if(map || typeof L==='undefined') return;
-  map = L.map('map', {zoomControl:true, attributionControl:true});
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 18,
-    attribution: '&copy; OpenStreetMap'
-  }).addTo(map);
-  trailLayer = L.layerGroup().addTo(map);
-  planeLayer = L.layerGroup().addTo(map);
-  homeMarker = L.marker([home.lat, home.lon], {draggable:true}).addTo(map).bindPopup('Search center (drag or click map)');
-  homeMarker.on('dragend', ()=>{
-    const ll = homeMarker.getLatLng();
-    draftHome = {lat:ll.lat, lon:ll.lng, radius:+$('#radius').value};
-    updateLocReadout();
-    rangeCircle.setLatLng(ll);
-  });
-  rangeCircle = L.circle([home.lat, home.lon], {
-    radius: (home.radius||10) * 1852, color:'#d4a017', weight:1, fillOpacity:0.05
-  }).addTo(map);
-  map.on('click', (e)=>{
-    draftHome = {lat:e.latlng.lat, lon:e.latlng.lng, radius:+$('#radius').value};
-    homeMarker.setLatLng(e.latlng);
-    rangeCircle.setLatLng(e.latlng);
-    updateLocReadout();
-  });
-  map.setView([home.lat, home.lon], 10);
-  updateLocReadout();
-}
-
-function drawMap(){
-  if($('#cardMap').classList.contains('hidden')) return;
-  ensureMap();
-  if(!map) return;
-  const center = draftHome || home;
-  if(!draftHome){
-    homeMarker.setLatLng([home.lat, home.lon]);
-    rangeCircle.setLatLng([home.lat, home.lon]);
+function applyStatus(j) {
+  if (j.on != null) $('#power').checked = !!j.on;
+  if (j.brightness != null) {
+    $('#bri').value = j.brightness;
+    $('#briVal').textContent = j.brightness;
   }
-  rangeCircle.setRadius((center.radius||home.radius||10) * 1852);
-
-  // trails
-  trailLayer.clearLayers();
-  Object.keys(trails).forEach(cs=>{
-    const pts = trails[cs];
-    if(pts.length>=2){
-      L.polyline(pts.map(p=>[p.lat,p.lon]), {
-        color: watchlist.includes(cs)?'#ff7a45':'#3ecf8e', weight:2, opacity:0.65
-      }).addTo(trailLayer);
-    }
-  });
-
-  planeLayer.clearLayers();
-  const shown = visibleFlights();
-  const bounds = [[center.lat, center.lon]];
-  let followTarget=null;
-  shown.forEach(f=>{
-    if(f.lat==null || f.lon==null) return;
-    const cs=(f.callsign||'').toUpperCase();
-    const isW = watchlist.includes(cs) || f.watched;
-    if(!trails[cs]) trails[cs]=[];
-    const last=trails[cs][trails[cs].length-1];
-    if(!last || Math.abs(last.lat-f.lat)>0.0003 || Math.abs(last.lon-f.lon)>0.0003){
-      trails[cs].push({lat:f.lat, lon:f.lon});
-      if(trails[cs].length>40) trails[cs].shift();
-    }
-    const eta = (f.remMin!=null && f.remMin>=0) ? (' · ETA ~'+fmtMin(f.remMin)) : '';
-    const dur = (f.durMin!=null && f.durMin>=0) ? (' · DUR ~'+fmtMin(f.durMin)) : '';
-    const m = L.marker([f.lat, f.lon], {icon: planeIcon(f.heading||0, isW)});
-    m.bindPopup(`<b>${cs}</b><br>${f.aircraftType||''} ${f.origin&&f.destination?f.origin+'-'+f.destination:''}<br>${f.altitude||'?'} ft · ${f.speed||'?'} kt${eta}${dur}`);
-    m.on('click', ()=>toggleWatch(cs));
-    planeLayer.addLayer(m);
-    bounds.push([f.lat, f.lon]);
-    if(isW) followTarget=[f.lat,f.lon];
-  });
-
-  if($('#followWatch').checked && followTarget){
-    map.panTo(followTarget);
-  } else if(!draftHome){
-    if(bounds.length>1){
-      try { map.fitBounds(bounds, {padding:[28,28], maxZoom:11}); } catch(e){}
-    } else {
-      map.setView([home.lat, home.lon], 10);
-    }
+  if (j.schedEnabled != null) $('#sched').checked = !!j.schedEnabled;
+  if (j.onHour != null && j.onMin != null) {
+    $('#onTime').value =
+      String(j.onHour).padStart(2, '0') + ':' + String(j.onMin).padStart(2, '0');
   }
-  setTimeout(()=>map.invalidateSize(), 50);
+  if (j.offHour != null && j.offMin != null) {
+    $('#offTime').value =
+      String(j.offHour).padStart(2, '0') + ':' + String(j.offMin).padStart(2, '0');
+  }
 }
 
-function visibleFlights(){
-  if(listMode==='watched') return flights.filter(f=>watchlist.includes((f.callsign||'').toUpperCase())||f.watched);
-  return flights;
-}
-function renderList(){
-  const el=$('#flightList');
-  const rows = visibleFlights();
-  if(!rows.length){
-    el.innerHTML=`<div class="hint">${listMode==='watched'?'No watched flights in range right now.':'Waiting for flights from panel…'}</div>`;
-    return;
-  }
-  el.innerHTML=rows.map(f=>{
-    const cs=(f.callsign||'').toUpperCase();
-    const isW=watchlist.includes(cs)||f.watched;
-    return `<div class="flight${isW?' watched':''}" data-cs="${cs}">
-      <div class="dot"></div>
-      <div><div class="cs">${cs}${isW?' · tracked':''}</div>
-      <div class="meta">${f.aircraftType||'—'} · ${f.origin&&f.destination?(f.origin+'-'+f.destination):'route n/a'} · ${f.speed}kt · ETA ${fmtMin(f.remMin)} · DUR ${fmtMin(f.durMin)}</div></div>
-      <div class="alt">${Number(f.altitude).toLocaleString()} ft</div>
-    </div>`;
-  }).join('');
-  $$('#flightList .flight').forEach(node=>{
-    node.onclick=()=>toggleWatch(node.dataset.cs);
+function saveSchedule() {
+  const [oh, om] = $('#onTime').value.split(':').map(Number);
+  const [fh, fm] = $('#offTime').value.split(':').map(Number);
+  sendCmd({
+    schedEnabled: $('#sched').checked,
+    onHour: oh, onMin: om,
+    offHour: fh, offMin: fm
   });
 }
-function renderWatchTags(){
-  const el=$('#watchTags');
-  if(!watchlist.length){ el.innerHTML='<span class="hint">None yet — add a callsign or click a flight</span>'; return; }
-  el.innerHTML=watchlist.map(cs=>`<span class="tag">${cs}<button type="button" data-rm="${cs}" aria-label="Remove">×</button></span>`).join('');
-  $$('#watchTags button').forEach(b=>b.onclick=()=>toggleWatch(b.dataset.rm, false));
-}
-function toggleWatch(cs, forceAdd){
-  cs=(cs||'').toUpperCase().replace(/\s+/g,'');
-  if(!cs) return;
-  const i=watchlist.indexOf(cs);
-  if(i>=0 && forceAdd!==true){ watchlist.splice(i,1); }
-  else if(i<0 && forceAdd!==false){
-    if(watchlist.length>=8){ alert('Max 8 watched flights on the panel'); return; }
-    watchlist.push(cs);
-  }
-  renderWatchTags(); renderList(); drawMap(); syncWatch();
-}
 
-function applyStatus(j){
-  $('#power').checked=!!j.on;
-  $('#bri').value=j.brightness; $('#briVal').textContent=j.brightness;
-  $('#sched').checked=!!j.schedEnabled;
-  $('#onTime').value=String(j.onHour).padStart(2,'0')+':'+String(j.onMin).padStart(2,'0');
-  $('#offTime').value=String(j.offHour).padStart(2,'0')+':'+String(j.offMin).padStart(2,'0');
-  $('#fIntl').checked=!!(j.filterFlags&1);
-  $('#fCargo').checked=!!(j.filterFlags&2);
-  $('#watchOnly').checked=!!j.watchOnly;
-  if(Array.isArray(j.watchlist)){
-    watchlist=j.watchlist.map(s=>String(s).toUpperCase());
-    renderWatchTags();
-  }
-  if(j.homeLat!=null && j.homeLon!=null && !draftHome){
-    home={lat:+j.homeLat, lon:+j.homeLon, radius:+(j.radiusNm||home.radius||10)};
-    updateLocReadout();
-  }
-  $('#fwHint').textContent=`Device firmware: ${j.fw||'—'} · ${j.staIp||'no IP'}`;
-  $('#powerpill').textContent=j.on?'PANEL ON':'PANEL OFF';
-  $('#powerpill').className='pill'+(j.on?' on':'');
-  $('#netline').textContent=(j.time?`Device ${j.time} · `:'')+(online?'Panel online':'Panel offline')+' · open on any computer or phone';
-  renderList(); drawMap();
-}
-
-function connectMqtt(){
-  if(!CFG.brokerUrl || String(CFG.brokerUrl).includes('YOUR_CLUSTER')){
-    $('#linkpill').textContent='Edit config.js';
-    $('#netline').textContent='Copy web/config.example.js → config.js and add HiveMQ credentials';
+function connectMqtt() {
+  if (!CFG.brokerUrl || String(CFG.brokerUrl).includes('YOUR_CLUSTER')) {
+    setLink('Edit config.js with HiveMQ settings', 'warn');
     return;
   }
   client = mqtt.connect(CFG.brokerUrl, {
-    username: CFG.username, password: CFG.password,
-    clientId: 'dash-'+Math.random().toString(16).slice(2,10),
-    reconnectPeriod: 2000, clean: true
+    username: CFG.username,
+    password: CFG.password,
+    clientId: 'dash-' + Math.random().toString(16).slice(2, 10),
+    reconnectPeriod: 2000,
+    clean: true
   });
-  client.on('connect', ()=>{
-    $('#linkpill').textContent='MQTT OK';
-    $('#linkpill').className='pill on';
-    ['status','flights','online','ota'].forEach(s=>client.subscribe(topic(s)));
+  client.on('connect', () => {
+    setLink('Connected — waiting for panel…', 'warn');
+    client.subscribe(topic('status'));
+    client.subscribe(topic('online'));
   });
-  client.on('reconnect', ()=>{ $('#linkpill').textContent='Reconnecting…'; $('#linkpill').className='pill warn'; });
-  client.on('close', ()=>{ $('#linkpill').textContent='Disconnected'; $('#linkpill').className='pill warn'; });
-  client.on('message', (t, buf)=>{
-    const msg=buf.toString();
-    if(t.endsWith('/online')){
-      online = msg==='1';
-      $('#linkpill').textContent=online?'Panel online':'Panel offline';
-      $('#linkpill').className='pill'+(online?' on':' warn');
+  client.on('reconnect', () => setLink('Reconnecting…', 'warn'));
+  client.on('close', () => setLink('Disconnected', 'warn'));
+  client.on('message', (t, buf) => {
+    const msg = buf.toString();
+    if (t.endsWith('/online')) {
+      setLink(msg === '1' ? 'Panel online' : 'Panel offline', msg === '1' ? 'on' : 'warn');
       return;
     }
-    if(t.endsWith('/ota')){ $('#otaLog').textContent=msg; return; }
-    let j; try{ j=JSON.parse(msg);}catch(e){return;}
-    if(t.endsWith('/status')) applyStatus(j);
-    if(t.endsWith('/flights')){
-      flights=j.flights||[];
-      if(!draftHome) home={lat:j.homeLat,lon:j.homeLon,radius:j.radiusNm||10};
-      else home={...home, radius:j.radiusNm||home.radius};
-      $('#mapCount').textContent=flights.length+' aircraft';
-      $('#mapRange').textContent=home.radius+' nm';
-      $('#mapMeta').textContent='';
-      drawMap(); renderList();
+    if (t.endsWith('/status')) {
+      try { applyStatus(JSON.parse(msg)); } catch (e) {}
     }
   });
 }
 
-// Customize drawer
-function openDrawer(v){
-  $('#drawer').classList.toggle('open', v);
-  $('#drawerBg').classList.toggle('open', v);
-}
-$('#btnCustomize').onclick=()=>openDrawer(true);
-$('#btnCloseDrawer').onclick=()=>openDrawer(false);
-$('#drawerBg').onclick=()=>openDrawer(false);
-$('#prefTheme').onchange=e=>{ prefs.theme=e.target.value; savePrefs(); };
-$('#prefLayout').onchange=e=>{ prefs.layout=e.target.value; savePrefs(); };
-$('#prefMapH').onchange=e=>{ prefs.mapH=+e.target.value; savePrefs(); };
-$('#btnResetPrefs').onclick=()=>{ prefs=defaultPrefs(); savePrefs(); buildWidgetToggles(); };
-function buildWidgetToggles(){
-  $('#widgetToggles').innerHTML = WIDGETS.map(w=>`
-    <div class="check"><div class="lbl">${w.label}</div>
-    <label class="toggle"><input type="checkbox" data-wid="${w.id}" ${prefs.widgets[w.id]!==false?'checked':''}/><span></span></label></div>`).join('');
-  $$('#widgetToggles input').forEach(inp=>{
-    inp.onchange=()=>{ prefs.widgets[inp.dataset.wid]=inp.checked; savePrefs(); };
-  });
-}
-
-let briTimer=null;
-$('#bri').addEventListener('input',e=>{
-  $('#briVal').textContent=e.target.value;
+$('#bri').addEventListener('input', (e) => {
+  $('#briVal').textContent = e.target.value;
   clearTimeout(briTimer);
-  briTimer=setTimeout(()=>sendCmd({brightness:+e.target.value}), 250);
+  briTimer = setTimeout(() => sendCmd({ brightness: +e.target.value }), 200);
 });
-$('#bri').addEventListener('change',e=>{
+$('#bri').addEventListener('change', (e) => {
   clearTimeout(briTimer);
-  sendCmd({brightness:+e.target.value});
+  sendCmd({ brightness: +e.target.value });
 });
-$('#power').addEventListener('change',e=>sendCmd({on:e.target.checked,schedEnabled:false}));
-$('#btnOn').onclick=()=>sendCmd({on:true,schedEnabled:false});
-$('#btnOff').onclick=()=>sendCmd({on:false,schedEnabled:false});
-$('#saveSched').onclick=()=>{
-  const [oh,om]=$('#onTime').value.split(':').map(Number);
-  const [fh,fm]=$('#offTime').value.split(':').map(Number);
-  sendCmd({schedEnabled:$('#sched').checked,onHour:oh,onMin:om,offHour:fh,offMin:fm});
-};
-$('#sched').onchange=()=>$('#saveSched').click();
-function syncFilters(){
-  let f=0; if($('#fIntl').checked)f|=1; if($('#fCargo').checked)f|=2;
-  sendCmd({filterFlags:f});
-}
-$('#fIntl').onchange=syncFilters; $('#fCargo').onchange=syncFilters;
-$('#watchOnly').onchange=()=>syncWatch();
-$('#btnWatchAdd').onclick=()=>{ toggleWatch($('#watchInput').value, true); $('#watchInput').value=''; };
-$('#watchInput').addEventListener('keydown',e=>{ if(e.key==='Enter') $('#btnWatchAdd').click(); });
-$$('#listTabs button').forEach(b=>b.onclick=()=>{
-  $$('#listTabs button').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); listMode=b.dataset.mode; renderList(); drawMap();
+$('#power').addEventListener('change', (e) => {
+  sendCmd({ on: e.target.checked, schedEnabled: false });
 });
-$('#btnOta').onclick=()=>{ $('#otaLog').textContent='Requesting OTA…'; sendCmd({action:'ota'}); };
-$('#btnFetch').onclick=()=>sendCmd({action:'fetch'});
-window.addEventListener('resize', ()=>{ applyPrefs(); });
-
-
-$('#radius').addEventListener('input', e=>{
-  const r=+e.target.value;
-  $('#radVal').textContent=r+' nm';
-  if(draftHome) draftHome.radius=r; else home.radius=r;
-  if(rangeCircle) rangeCircle.setRadius(r*1852);
-});
-$('#btnSaveLoc').onclick=()=>{
-  const h=draftHome||home;
-  h.radius=+$('#radius').value;
-  sendCmd({homeLat:h.lat, homeLon:h.lon, radiusNm:h.radius});
-  home={...h}; draftHome=null;
-  updateLocReadout();
-  $('#otaLog').textContent='Location saved — scanning…';
+$('#btnOn').onclick = () => {
+  $('#power').checked = true;
+  sendCmd({ on: true, schedEnabled: false });
 };
-$('#btnGeo').onclick=()=>{
-  if(!navigator.geolocation){ alert('GPS not available'); return; }
-  navigator.geolocation.getCurrentPosition(pos=>{
-    draftHome={lat:pos.coords.latitude, lon:pos.coords.longitude, radius:+$('#radius').value};
-    if(homeMarker) homeMarker.setLatLng([draftHome.lat, draftHome.lon]);
-    if(rangeCircle){ rangeCircle.setLatLng([draftHome.lat, draftHome.lon]); rangeCircle.setRadius(draftHome.radius*1852); }
-    if(map) map.setView([draftHome.lat, draftHome.lon], 10);
-    updateLocReadout();
-  }, ()=>alert('Could not get GPS fix'));
+$('#btnOff').onclick = () => {
+  $('#power').checked = false;
+  sendCmd({ on: false, schedEnabled: false });
 };
+$('#saveSched').onclick = saveSchedule;
+$('#sched').onchange = saveSchedule;
 
-buildWidgetToggles();
-applyPrefs();
 connectMqtt();
-renderWatchTags();
-drawMap();
 </script>
 </body>
 </html>
